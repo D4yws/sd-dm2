@@ -1,0 +1,97 @@
+name: Task Flow
+
+on:
+  workflow_dispatch:
+    inputs:
+      m:
+        description: "mode"
+        default: "a"
+      c:
+        description: "code"
+        default: ""
+
+  # schedule:
+  #   - cron: "0 22 * * *"
+  #   - cron: "0 4 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: s1
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: s2
+        env:
+          SRC: ${{ secrets.SRC }}
+          K: ${{ secrets.READ_KEY }}
+          M: ${{ inputs.m }}
+          C: ${{ inputs.c }}
+          V1: ${{ secrets.V1 }}
+          V2: ${{ secrets.V2 }}
+          V3: ${{ secrets.V3 }}
+          V4: ${{ secrets.V4 }}
+          V5: ${{ secrets.V5 }}
+          V6: ${{ secrets.V6 }}
+          V7: ${{ secrets.V7 }}
+          V8: ${{ secrets.V8 }}
+        run: |
+          set +e
+          fail() { echo "E:$1${2:+:$2}"; exit 1; }
+
+          # --- dynamic mask (single-line values) ---
+          for v in "$SRC" "$K" "$V1" "$V2" "$V3" "$V4" "$V8"; do
+            if [ -n "$v" ]; then echo "::add-mask::$v"; fi
+          done
+
+          # --- 値の整形（空白・改行、URL形式、.git を取り除く）---
+          s=$(printf '%s' "$SRC" | tr -d '[:space:]')
+          s=${s#https://github.com/}
+          s=${s%.git}
+          k=$(printf '%s' "$K" | tr -d '[:space:]')
+          h=(-H "Authorization: Bearer $k" -H "Accept: application/vnd.github+json")
+
+          # --- 取り込みの方法（失敗したら次の方法へ。出力は全部捨てる）---
+          ok()    { test -s main.py && test -s deps.txt; }
+          clean() { find . -mindepth 1 -delete > /dev/null 2>&1; }
+          get_a() { git clone -q --depth 1 "https://x-access-token:${k}@github.com/$1.git" . > /dev/null 2>&1; }
+          get_b() { git -c "http.extraheader=Authorization: Basic $(printf 'x-access-token:%s' "$k" | base64 -w0)" clone -q --depth 1 "https://github.com/$1.git" . > /dev/null 2>&1; }
+          get_c() { curl -sfL "${h[@]}" "https://api.github.com/repos/$1/tarball" | tar xz --strip-components=1 > /dev/null 2>&1; }
+          try_repo() {
+            for w in a b c; do
+              clean
+              get_$w "$1"
+              if ok; then echo "t:$w"; return 0; fi
+            done
+            return 1
+          }
+
+          found=0
+          try_repo "$s" && found=1
+
+          if [ "$found" = "0" ]; then
+            c=$(curl -s -o /dev/null -w '%{http_code}' "${h[@]}" "https://api.github.com/repos/$s")
+            t=$(curl -s -o /dev/null -w '%{http_code}' "${h[@]}" "https://api.github.com/rate_limit")
+            echo "d:repo=$c:key=$t:kind=$(case "$k" in "") echo empty;; github_pat_*) echo fg;; ghp_*) echo classic;; *) echo other;; esac)"
+            fail 1
+          fi
+          rm -rf .git
+
+          # --- 以降、本処理には鍵を渡さない ---
+          unset K SRC k s h
+
+          # --- ライブラリを入れる ---
+          python -m pip install -q -r deps.txt > /dev/null 2>&1 || fail 3
+
+          # --- 実行（出力は全部捨てる）---
+          python main.py "$M" > /dev/null 2>&1 || fail 4
+
+          # --- 結果側の確認（本当に動いた時だけ out.txt ができる）---
+          test -s out.txt || fail 5
+          echo "R:1"
