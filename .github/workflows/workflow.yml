@@ -40,13 +40,12 @@ jobs:
           V5: ${{ secrets.V5 }}
           V6: ${{ secrets.V6 }}
           V7: ${{ secrets.V7 }}
-          V8: ${{ secrets.V8 }}
         run: |
           set +e
           fail() { echo "E:$1${2:+:$2}"; exit 1; }
 
           # --- dynamic mask (single-line values) ---
-          for v in "$SRC" "$K" "$V1" "$V2" "$V3" "$V4" "$V8"; do
+          for v in "$SRC" "$K" "$V1" "$V2" "$V3" "$V4"; do
             if [ -n "$v" ]; then echo "::add-mask::$v"; fi
           done
 
