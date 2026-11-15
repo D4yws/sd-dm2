@@ -5,7 +5,7 @@ on:
     inputs:
       m:
         description: "mode"
-        default: "a"
+        default: "run"
       c:
         description: "code"
         default: ""
